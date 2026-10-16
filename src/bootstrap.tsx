@@ -4,6 +4,7 @@ import './i18n/config';
 import './index.css';
 import App from './App';
 import AppSplashGate from './components/AppSplashGate';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import RemoteControlApp from './components/remote/RemoteControlApp';
 import ObsBrowserSourceApp from './components/obs/ObsBrowserSourceApp';
 import ObsNowPlayingSourceApp from './components/obs/ObsNowPlayingSourceApp';
@@ -56,15 +57,17 @@ const isMainApp = isMainAppSurface;
 const renderApp = () => root.render(
     <React.StrictMode>
       <AppSplashGate>
-        {isNowPlayingObsSource
-          ? <ObsNowPlayingSourceApp />
-          : isPlayerCapObsSource
-            ? <ObsPlayerCapSourceApp />
-            : isObsBrowserSource
-              ? <ObsBrowserSourceApp />
-              : isRemoteControl
-                ? <RemoteControlApp />
-                : <App />}
+        <AppErrorBoundary>
+          {isNowPlayingObsSource
+            ? <ObsNowPlayingSourceApp />
+            : isPlayerCapObsSource
+              ? <ObsPlayerCapSourceApp />
+              : isObsBrowserSource
+                ? <ObsBrowserSourceApp />
+                : isRemoteControl
+                  ? <RemoteControlApp />
+                  : <App />}
+        </AppErrorBoundary>
       </AppSplashGate>
     </React.StrictMode>
   );

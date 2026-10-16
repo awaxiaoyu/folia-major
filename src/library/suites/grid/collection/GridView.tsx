@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useMotionValue, animate, AnimatePresence, useDragControls, useIsPresent } from 'framer-motion';
 import { ChevronLeft, Disc, Download, Play, Plus, Loader2, Heart, ListPlus, Pencil, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
 import GridPanelToggleIndicator from '../shared/GridPanelToggleIndicator';
+import { GridImageWithFallback } from '../shared/GridImageWithFallback';
 import { useTranslation } from 'react-i18next';
 import { SongResult, type LocalSong, type StatusMessage, Theme, type UnifiedSong } from '../../../../types';
 import { isSongUnavailable } from '../../../../services/onlineMusic/songAvailability';
@@ -1615,7 +1616,7 @@ export const GridView: React.FC<GridViewProps> = ({
                             {/* Cover Image */}
                             <div className="w-full aspect-square rounded-2xl overflow-hidden shadow-lg mb-4 bg-zinc-800/20 relative shrink-0">
                                 {infoPanelCoverUrl ? (
-                                    <img src={getSizedCoverUrl(toHttps(infoPanelCoverUrl), 512)} alt={infoCollection?.name || title} decoding="async" className="w-full h-full object-cover select-none pointer-events-none" />
+                                    <GridImageWithFallback src={getSizedCoverUrl(toHttps(infoPanelCoverUrl), 512)} alt={infoCollection?.name || title} fallbackSize={64} decoding="async" className="w-full h-full object-cover select-none pointer-events-none" />
                                 ) : (
                                     <Disc size={64} className="opacity-20 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                                 )}
@@ -1674,8 +1675,8 @@ export const GridView: React.FC<GridViewProps> = ({
                                     )}
                                     {infoCollection?.creator && (
                                         <div className="flex items-center gap-2 mt-2 text-xs opacity-60">
-                                            <div className="w-5 h-5 rounded-full overflow-hidden">
-                                                <img src={toHttps(infoCollection.creator.avatarUrl)} alt="avatar" className="w-full h-full object-cover" />
+                                            <div className="relative w-5 h-5 rounded-full overflow-hidden">
+                                                <GridImageWithFallback src={toHttps(infoCollection.creator.avatarUrl)} alt="avatar" fallbackSize={16} fallbackClassName="absolute inset-0 flex items-center justify-center bg-zinc-800/20" className="w-full h-full object-cover" />
                                             </div>
                                             <span className="font-semibold">{infoCollection.creator.nickname}</span>
                                         </div>

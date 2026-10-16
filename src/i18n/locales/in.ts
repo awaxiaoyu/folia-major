@@ -906,6 +906,9 @@ export default {
       "glowIntensity": "Kilau"
     },
     "backToHome": "Kembali ke Beranda",
+    "appLoadFailed": "Aplikasi tidak selesai dimuat",
+    "appLoadFailedDetail": "Terjadi kesalahan pada renderer. Muat ulang aplikasi untuk mencoba lagi.",
+    "reloadApp": "Muat ulang aplikasi",
     "cancel": "Batal",
     "apply": "Terapkan",
     "retry": "Coba Lagi",

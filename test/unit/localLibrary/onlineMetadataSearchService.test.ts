@@ -30,7 +30,7 @@ describe('onlineMetadataSearchService', () => {
     beforeEach(() => vi.resetAllMocks());
 
     it('keeps a title-compatible NetEase candidate without querying QQ', async () => {
-        vi.mocked(neteaseApi.cloudSearch).mockResolvedValue({ result: { songs: [
+        vi.mocked(neteaseApi.cloudSearch).mockResolvedValue({ code: 200, result: { songs: [
             { id: 1, name: 'Target Song', dt: 200000, ar: [{ id: 2, name: 'Target Artist' }], al: { id: 3, name: 'Target Album' } },
         ] } });
         const candidate = await findAutomaticOnlineMetadataCandidate(song);
@@ -40,7 +40,7 @@ describe('onlineMetadataSearchService', () => {
     });
 
     it('falls back to QQ when NetEase has no title-compatible candidate', async () => {
-        vi.mocked(neteaseApi.cloudSearch).mockResolvedValue({ result: { songs: [
+        vi.mocked(neteaseApi.cloudSearch).mockResolvedValue({ code: 200, result: { songs: [
             { id: 1, name: 'Completely Unrelated Melody', dt: 200000, ar: [{ name: 'Someone Else' }] },
         ] } });
         vi.mocked(searchQQLyrics).mockResolvedValue([
@@ -63,7 +63,7 @@ describe('onlineMetadataSearchService', () => {
     });
 
     it('falls back to provider-backed KuGou when NetEase and QQ have no title-compatible candidate', async () => {
-        vi.mocked(neteaseApi.cloudSearch).mockResolvedValue({ result: { songs: [] } });
+        vi.mocked(neteaseApi.cloudSearch).mockResolvedValue({ code: 200, result: { songs: [] } });
         vi.mocked(searchQQLyrics).mockResolvedValue([]);
         const kugouProvider = getOnlineMusicProvider('kugou')!;
         vi.spyOn(kugouProvider.search!, 'searchSongs').mockResolvedValue({

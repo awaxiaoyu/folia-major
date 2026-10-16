@@ -911,6 +911,9 @@ export default {
       "glowIntensity": "Glow"
     },
     "backToHome": "Back to Home",
+    "appLoadFailed": "The app could not finish loading",
+    "appLoadFailedDetail": "A renderer error stopped this window. Reload the app to try again.",
+    "reloadApp": "Reload app",
     "cancel": "Cancel",
     "apply": "Apply",
     "retry": "Retry",

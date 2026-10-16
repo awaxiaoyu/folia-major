@@ -74,6 +74,37 @@ const normalizeStringList = (value: unknown): string[] => (
         : []
 );
 
+// NetEase's transport returns JSON error bodies as successful promises. Keep those responses
+// out of the adapter's empty-array fallbacks. Every successful NetEase endpoint response carries
+// code 200; a missing code is an invalid envelope rather than a successful legacy response.
+const assertNeteaseResponse = (response: any, operation: string): void => {
+    const code = Number(response?.code);
+    if (!Number.isFinite(code)) {
+        throw new OnlineProviderError('invalid-response', `NetEase returned no status code for ${operation}`, 'netease', response);
+    }
+    if (code === 200) return;
+    if ([301, 401, 403].includes(code)) {
+        throw new OnlineProviderError('auth-required', `NetEase rejected ${operation}: not signed in`, 'netease');
+    }
+    throw new OnlineProviderError('unavailable', `NetEase rejected ${operation}: code ${code}`, 'netease');
+};
+
+const requireNeteaseArray = <T>(response: any, value: unknown, operation: string): T[] => {
+    assertNeteaseResponse(response, operation);
+    if (!Array.isArray(value)) {
+        throw new OnlineProviderError('invalid-response', `NetEase returned no ${operation} list`, 'netease', response);
+    }
+    return value as T[];
+};
+
+const requireNeteaseObject = <T>(response: any, value: unknown, operation: string): T => {
+    assertNeteaseResponse(response, operation);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new OnlineProviderError('invalid-response', `NetEase returned no ${operation} data`, 'netease', response);
+    }
+    return value as T;
+};
+
 // 网易云 `/user/playlist` 给「我喜欢的音乐」的标记：`specialType: 5`（普通歌单是 0）。
 const NETEASE_LIKED_PLAYLIST_SPECIAL_TYPE = 5;
 
@@ -311,7 +342,12 @@ export const neteaseProvider: OnlineMusicProvider = {
     search: {
         async searchSongs(query, limit, offset) {
             const response = await neteaseApi.cloudSearch(query, limit, offset);
-            const items = (response.result?.songs || []).map(normalizeNeteaseSong);
+            assertNeteaseResponse(response, 'search');
+            const songs = response?.result?.songs;
+            if (!response?.result || !Array.isArray(songs)) {
+                throw new OnlineProviderError('invalid-response', 'NetEase returned no search result list', 'netease', response);
+            }
+            const items = songs.map(normalizeNeteaseSong);
             const total = Number(response.result?.songCount || items.length);
             return { items, total, hasMore: offset + items.length < total, nextOffset: offset + items.length };
         },
@@ -319,12 +355,14 @@ export const neteaseProvider: OnlineMusicProvider = {
     playback: {
         async getSongDetail(id) {
             const response = await neteaseApi.getSongDetail(toNeteaseId(id));
-            const raw = response?.songs?.[0];
+            const songs = requireNeteaseArray<any>(response, response?.songs, 'song detail');
+            const raw = songs[0];
             return raw ? normalizeNeteaseSong(raw) : null;
         },
         async getAudioSource(song, quality) {
             const response = await neteaseApi.getSongUrl(toNeteaseId(song.id), mapQuality(quality));
-            const raw = response?.data?.[0];
+            const data = requireNeteaseArray<any>(response, response?.data, 'audio source');
+            const raw = data[0];
             const rawUrl = raw?.url;
             if (!rawUrl) return null;
             const trackGain = toFiniteNumber(raw?.gain);
@@ -457,7 +495,8 @@ export const neteaseProvider: OnlineMusicProvider = {
         async getUserPlaylists(userId, limit, offset) {
             const response = await neteaseApi.getUserPlaylists(toNeteaseId(userId), limit, offset);
             // 只有用户歌单列表知道「这是谁的歌单」，「我喜欢的音乐」在这里标 isLiked；归一化结果带着它进缓存，回灌时照样保留。
-            const items = (response?.playlist || []).map((item: any) => normalizeCollection(
+            const playlist = requireNeteaseArray<any>(response, response?.playlist, 'playlist');
+            const items = playlist.map((item: any) => normalizeCollection(
                 isOwnNeteaseLikedPlaylist(item, userId) ? { ...item, isLiked: true } : item,
             ));
             return { items, hasMore: items.length === limit, nextOffset: offset + items.length };
@@ -478,14 +517,21 @@ export const neteaseProvider: OnlineMusicProvider = {
         },
         async getUserAlbums(_userId, limit, offset) {
             const response = await neteaseApi.getFavoriteAlbums(limit, offset);
-            const items = (response?.data || []).map((item: any) => normalizeCollection(item, 'album'));
+            const items = requireNeteaseArray<any>(response, response?.data, 'album').map((item: any) => normalizeCollection(item, 'album'));
             return { items, hasMore: Boolean(response?.hasMore), nextOffset: offset + items.length };
         },
         async getCloudCollection(user) {
             const response = await neteaseApi.getUserCloud(1, 0);
-            const trackCount = Number(response?.count || 0);
+            const cloud = requireNeteaseObject<any>(response, response, 'cloud collection');
+            const trackCount = Number(cloud.count);
+            if (!Number.isFinite(trackCount)) {
+                throw new OnlineProviderError('invalid-response', 'NetEase returned no cloud collection data', 'netease', response);
+            }
             if (trackCount <= 0) return null;
-            const firstSong = response?.songs?.[0] ? normalizeNeteaseSong(response.songs[0]) : null;
+            if (!Array.isArray(cloud.songs)) {
+                throw new OnlineProviderError('invalid-response', 'NetEase returned no cloud collection data', 'netease', response);
+            }
+            const firstSong = cloud.songs?.[0] ? normalizeNeteaseSong(cloud.songs[0]) : null;
             return normalizeCollection({
                 id: -100,
                 name: 'cloud',
@@ -499,12 +545,20 @@ export const neteaseProvider: OnlineMusicProvider = {
     catalog: {
         async getPlaylistTracks(id, limit, offset) {
             const response = await neteaseApi.getPlaylistTracks(toNeteaseId(id), limit, offset);
-            const items = (response?.songs || []).map(normalizeNeteaseSong);
+            const items = requireNeteaseArray<any>(response, response?.songs, 'playlist track').map(normalizeNeteaseSong);
             return { items, hasMore: items.length === limit, nextOffset: offset + items.length };
         },
         async getCloudTracks(limit, offset) {
             const response = await neteaseApi.getUserCloud(limit, offset);
-            const items = (response?.songs || []).map((item: unknown) => {
+            assertNeteaseResponse(response, 'cloud track');
+            const total = Number(response?.count);
+            if (!Array.isArray(response?.songs)) {
+                if (Number.isFinite(total) && total <= 0) {
+                    return { items: [], total, hasMore: false, nextOffset: offset };
+                }
+                throw new OnlineProviderError('invalid-response', 'NetEase returned no cloud track list', 'netease', response);
+            }
+            const items = response.songs.map((item: unknown) => {
                 const song = normalizeNeteaseSong(item);
                 return { ...song, sourceRef: { ...song.sourceRef, variant: 'cloud' } } as UnifiedSong;
             });
@@ -512,8 +566,7 @@ export const neteaseProvider: OnlineMusicProvider = {
         },
         async getAlbumDetail(id, existingCollection) {
             const response = await neteaseApi.getAlbum(toNeteaseId(id));
-            const rawAlbum = response?.album;
-            if (!rawAlbum) return existingCollection || null;
+            const rawAlbum = requireNeteaseObject<any>(response, response?.album, 'album detail');
 
             const normalized = normalizeCollection({ ...rawAlbum, id: rawAlbum.id ?? id }, 'album');
             return {
@@ -530,23 +583,24 @@ export const neteaseProvider: OnlineMusicProvider = {
         },
         async getAlbumTracks(id) {
             const response = await neteaseApi.getAlbum(toNeteaseId(id));
-            const items = (response?.songs || []).map(normalizeNeteaseSong);
+            const items = requireNeteaseArray<any>(response, response?.songs, 'album track').map(normalizeNeteaseSong);
             return { items, hasMore: false, nextOffset: items.length };
         },
         async getArtistSongs(id, limit, offset) {
             const response = await neteaseApi.getArtistSongs(toNeteaseId(id), limit, offset);
-            const items = (response?.songs || []).map(normalizeNeteaseSong);
+            const items = requireNeteaseArray<any>(response, response?.songs, 'artist track').map(normalizeNeteaseSong);
             return { items, hasMore: Boolean(response?.more), nextOffset: offset + items.length };
         },
         async getArtistAlbums(id, limit, offset) {
             const response = await neteaseApi.getArtistAlbums(toNeteaseId(id), limit, offset);
-            const items = (response?.hotAlbums || []).map((item: any) => normalizeCollection(item, 'album'));
+            const albums = requireNeteaseArray<any>(response, response?.hotAlbums, 'artist album');
+            const items = albums.map((item: any) => normalizeCollection(item, 'album'));
             return { items, hasMore: Boolean(response?.more), nextOffset: offset + items.length };
         },
         async getArtistDetail(id) {
             const response = await neteaseApi.getArtistDetail(toNeteaseId(id));
-            const artist = response?.data?.artist;
-            if (!artist) return null;
+            const data = requireNeteaseObject<any>(response, response?.data, 'artist detail');
+            const artist = requireNeteaseObject<any>(response, data.artist, 'artist detail');
             return {
                 ...normalizeCollection(artist, 'artist'),
                 coverUrl: artist.cover || artist.picUrl,
@@ -570,32 +624,32 @@ export const neteaseProvider: OnlineMusicProvider = {
     recommendations: {
         async getDailySongs(refresh) {
             const response = await neteaseApi.getDailyRecommendedSongs(refresh);
-            return (response?.songs || []).map(normalizeNeteaseSong);
+            return requireNeteaseArray<any>(response, response?.songs, 'daily recommendation').map(normalizeNeteaseSong);
         },
         async getPersonalFm(options) {
             // Falling back to the stored selection keeps callers that predate FM modes — the home
             // card, the radio grid, the queue refill — on whatever mode the user picked.
             const response = await neteaseApi.getPersonalFm(options ?? getPersonalFmRequestOptions());
-            return (response?.data || []).map(normalizeNeteaseSong);
+            return requireNeteaseArray<any>(response, response?.data, 'personal FM').map(normalizeNeteaseSong);
         },
         async getRecommendedCollections(limit) {
             const response = await neteaseApi.getPersonalizedPlaylists(limit);
-            return (response?.result || []).map((item: any) => normalizeCollection(item));
+            return requireNeteaseArray<any>(response, response?.result, 'recommended playlist').map((item: any) => normalizeCollection(item));
         },
         async getHistoryEntries() {
             const response = await neteaseApi.getDailyRecommendationHistoryDates();
-            const dates = response?.data?.dates || response?.dates || [];
+            const dates = requireNeteaseArray<string>(response, response?.data?.dates ?? response?.dates, 'recommendation history date');
             return dates.map((date: string) => ({ id: date, label: date }));
         },
         async getHistoryDates() {
             const response = await neteaseApi.getDailyRecommendationHistoryDates();
-            return response?.data?.dates || response?.dates || [];
+            return requireNeteaseArray<string>(response, response?.data?.dates ?? response?.dates, 'recommendation history date');
         },
         async getHistorySongs(entry) {
             const response = await neteaseApi.getDailyRecommendationHistoryDetail(
                 typeof entry === 'string' ? entry : entry.id,
             );
-            return (response?.data?.songs || response?.songs || []).map(normalizeNeteaseSong);
+            return requireNeteaseArray<any>(response, response?.data?.songs ?? response?.songs, 'recommendation history song').map(normalizeNeteaseSong);
         },
         async dislikeSong(id) {
             const response = await neteaseApi.dislikeDailyRecommendedSong(toNeteaseId(id));

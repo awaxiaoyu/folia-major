@@ -444,12 +444,26 @@ export const omni = {
     }> {
         return withActiveProvider(async provider => {
             const recommendations = provider.recommendations;
-            const [personalFm, dailySongs, recommendedCollections] = await Promise.all([
-                recommendations?.getPersonalFm?.() ?? [],
-                recommendations?.getDailySongs?.() ?? [],
-                recommendations?.getRecommendedCollections?.(limit) ?? [],
+            const invoke = <T>(operation: () => Promise<T> | T): Promise<T> => Promise.resolve().then(operation);
+            const [personalFmResult, dailySongsResult, recommendedCollectionsResult] = await Promise.allSettled([
+                invoke(() => recommendations?.getPersonalFm?.() ?? []),
+                invoke(() => recommendations?.getDailySongs?.() ?? []),
+                invoke(() => recommendations?.getRecommendedCollections?.(limit) ?? []),
             ]);
-            return { personalFm, dailySongs, recommendedCollections };
+            const settledValue = <T>(result: PromiseSettledResult<T>, section: string): T | [] => {
+                if (result.status === 'fulfilled') return result.value;
+                console.warn('[Omni] Home feed section failed', {
+                    providerId: provider.id,
+                    section,
+                    error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+                });
+                return [];
+            };
+            return {
+                personalFm: settledValue(personalFmResult, 'personalFm') as UnifiedSong[],
+                dailySongs: settledValue(dailySongsResult, 'dailySongs') as UnifiedSong[],
+                recommendedCollections: settledValue(recommendedCollectionsResult, 'recommendedCollections') as OmniCollection[],
+            };
         });
     },
 

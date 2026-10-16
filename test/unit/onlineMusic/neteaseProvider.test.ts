@@ -12,6 +12,7 @@ vi.mock('@/services/netease', () => ({
     neteaseApi: {
         normalizeSongResult: vi.fn((raw: unknown) => raw),
         getSongUrl: vi.fn(),
+        getSongDetail: vi.fn(),
         getLyric: vi.fn(),
         getUnavailableSongReplacement: vi.fn(),
         cloudSearch: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('@/services/netease', () => ({
         getArtistAlbums: vi.fn(),
         getPersonalizedPlaylists: vi.fn(),
         getLikedSongs: vi.fn(),
+        getUserCloud: vi.fn(),
         getUserPlaylists: vi.fn(),
         checkQr: vi.fn(),
         getQrKey: vi.fn(),
@@ -45,7 +47,7 @@ describe('neteaseProvider', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('maps semantic high quality to the NetEase exhigh value', async () => {
-        vi.mocked(neteaseApi.getSongUrl).mockResolvedValue({ data: [{ url: 'http://music.test/song.mp3' }] } as any);
+        vi.mocked(neteaseApi.getSongUrl).mockResolvedValue({ code: 200, data: [{ url: 'http://music.test/song.mp3' }] } as any);
         await expect(neteaseProvider.playback!.getAudioSource(song, 'high')).resolves.toMatchObject({
             url: 'https://music.test/song.mp3',
             quality: 'high',
@@ -55,6 +57,7 @@ describe('neteaseProvider', () => {
 
     it('maps NetEase track gain from the URL response and keeps negative dB values', async () => {
         vi.mocked(neteaseApi.getSongUrl).mockResolvedValue({
+            code: 200,
             data: [{ url: 'https://music.test/song.flac', gain: -7.25 }],
         } as any);
 
@@ -65,6 +68,7 @@ describe('neteaseProvider', () => {
 
     it('does not create ReplayGain metadata when NetEase omits gain', async () => {
         vi.mocked(neteaseApi.getSongUrl).mockResolvedValue({
+            code: 200,
             data: [{ url: 'https://music.test/song.mp3' }],
         } as any);
 
@@ -103,6 +107,7 @@ describe('neteaseProvider', () => {
 
     it('normalizes search results and paging metadata', async () => {
         vi.mocked(neteaseApi.cloudSearch).mockResolvedValue({
+            code: 200,
             result: { songs: [{ ...song, sourceRef: undefined }], songCount: 2 },
         } as any);
         const page = await neteaseProvider.search!.searchSongs('song', 1, 0);
@@ -110,8 +115,39 @@ describe('neteaseProvider', () => {
         expect(page).toMatchObject({ total: 2, hasMore: true, nextOffset: 1 });
     });
 
+    it('keeps a real empty search result distinct from a malformed/error response', async () => {
+        vi.mocked(neteaseApi.cloudSearch).mockResolvedValueOnce({
+            code: 200,
+            result: { songs: [], songCount: 0 },
+        } as any);
+        await expect(neteaseProvider.search!.searchSongs('戒不掉', 30, 0)).resolves.toMatchObject({
+            items: [],
+            total: 0,
+            hasMore: false,
+        });
+
+        vi.mocked(neteaseApi.cloudSearch).mockResolvedValueOnce({ code: 301 } as any);
+        await expect(neteaseProvider.search!.searchSongs('戒不掉', 30, 0)).rejects.toMatchObject({
+            name: 'OnlineProviderError',
+            code: 'auth-required',
+        });
+
+        vi.mocked(neteaseApi.cloudSearch).mockResolvedValueOnce({ code: 200, result: {} } as any);
+        await expect(neteaseProvider.search!.searchSongs('戒不掉', 30, 0)).rejects.toMatchObject({
+            name: 'OnlineProviderError',
+            code: 'invalid-response',
+        });
+
+        vi.mocked(neteaseApi.cloudSearch).mockResolvedValueOnce({ result: { songs: [song] } } as any);
+        await expect(neteaseProvider.search!.searchSongs('戒不掉', 30, 0)).rejects.toMatchObject({
+            name: 'OnlineProviderError',
+            code: 'invalid-response',
+        });
+    });
+
     it('normalizes album collection metadata into provider fields', async () => {
         vi.mocked(neteaseApi.getArtistAlbums).mockResolvedValue({
+            code: 200,
             hotAlbums: [{
                 id: 7,
                 name: 'Album',
@@ -135,8 +171,24 @@ describe('neteaseProvider', () => {
         });
     });
 
+    it.each([
+        ['an error response', { code: 502 }, 'unavailable'],
+        ['a missing album list', { code: 200 }, 'invalid-response'],
+    ])('rejects %s for artist albums instead of returning an empty page', async (_label, response, errorCode) => {
+        vi.mocked(neteaseApi.getArtistAlbums).mockResolvedValue(response as any);
+
+        await expect(neteaseProvider.catalog!.getArtistAlbums!(9, 10, 0)).rejects.toMatchObject({ code: errorCode });
+    });
+
+    it('rejects a song detail response with no songs list', async () => {
+        vi.mocked(neteaseApi.getSongDetail).mockResolvedValue({ message: 'gateway error' } as any);
+
+        await expect(neteaseProvider.playback!.getSongDetail(42)).rejects.toMatchObject({ code: 'invalid-response' });
+    });
+
     it('normalizes artist and full album biographies into the unified description field', async () => {
         vi.mocked(neteaseApi.getArtistDetail).mockResolvedValue({
+            code: 200,
             data: {
                 artist: {
                     id: 9,
@@ -148,6 +200,7 @@ describe('neteaseProvider', () => {
             },
         } as any);
         vi.mocked(neteaseApi.getAlbum).mockResolvedValue({
+            code: 200,
             album: {
                 id: 7,
                 name: 'Album',
@@ -170,6 +223,7 @@ describe('neteaseProvider', () => {
 
     it('maps personalized playlist copywriter into the unified description field', async () => {
         vi.mocked(neteaseApi.getPersonalizedPlaylists).mockResolvedValue({
+            code: 200,
             result: [{
                 id: 7,
                 name: 'Recommended Playlist',
@@ -183,6 +237,13 @@ describe('neteaseProvider', () => {
             name: 'Recommended Playlist',
             description: '猜你喜欢的歌单',
         });
+    });
+
+    it('rejects a malformed personalized playlist response', async () => {
+        vi.mocked(neteaseApi.getPersonalizedPlaylists).mockResolvedValue({ code: 500 } as any);
+
+        await expect(neteaseProvider.recommendations!.getRecommendedCollections!(10))
+            .rejects.toMatchObject({ code: 'unavailable' });
     });
 
     it('owns unavailable status and replacement normalization inside the provider', async () => {
@@ -279,6 +340,7 @@ describe('neteaseProvider user playlists', () => {
 
     it('marks its own specialType 5 playlist as liked and leaves the rest alone', async () => {
         vi.mocked(neteaseApi.getUserPlaylists).mockResolvedValue({
+            code: 200,
             playlist: [
                 { id: 11, name: 'amtx喜欢的音乐', specialType: 5, subscribed: false, creator: { userId: 7, nickname: 'amtx' } },
                 { id: 12, name: '自建歌单', specialType: 0, subscribed: false, creator: { userId: 7, nickname: 'amtx' } },
@@ -294,6 +356,30 @@ describe('neteaseProvider user playlists', () => {
         // 归一化结果进缓存后回灌（omni.normalizeCachedCollection）仍是「我喜欢的音乐」。
         expect(neteaseProvider.normalizeCollection!(page.items[0]).isLiked).toBe(true);
         expect(neteaseProvider.normalizeCollection!(page.items[1]).isLiked).toBeUndefined();
+    });
+});
+
+describe('neteaseProvider cloud drive', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it('treats an empty cloud response without a songs field as a valid empty collection', async () => {
+        vi.mocked(neteaseApi.getUserCloud).mockResolvedValue({ code: 200, count: 0 } as any);
+
+        await expect(neteaseProvider.library!.getCloudCollection!({ id: 7, nickname: 'Listener' }))
+            .resolves.toBeNull();
+        await expect(neteaseProvider.catalog!.getCloudTracks!(30, 0)).resolves.toMatchObject({
+            items: [],
+            total: 0,
+            hasMore: false,
+            nextOffset: 0,
+        });
+    });
+
+    it('rejects a positive cloud count without a songs list', async () => {
+        vi.mocked(neteaseApi.getUserCloud).mockResolvedValue({ code: 200, count: 1 } as any);
+
+        await expect(neteaseProvider.library!.getCloudCollection!()).rejects.toMatchObject({ code: 'invalid-response' });
+        await expect(neteaseProvider.catalog!.getCloudTracks!(30, 0)).rejects.toMatchObject({ code: 'invalid-response' });
     });
 });
 

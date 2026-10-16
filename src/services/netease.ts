@@ -457,7 +457,9 @@ const normalizeUnavailableSongReplacement = (response: any): UnavailableSongRepl
 const getSongDetail = async (ids: number[] | number) => {
   const idParam = Array.isArray(ids) ? ids.join(',') : String(ids);
   const res = await fetchWithCreds(`/song/detail?ids=${idParam}`);
-  res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
+  if (Array.isArray(res.songs)) {
+    res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
+  }
   return res;
 };
 
@@ -645,7 +647,9 @@ export const neteaseApi = {
   // --- Playlist Data ---
   getPlaylistTracks: async (id: number, limit = 50, offset = 0) => {
     const res = await fetchWithCreds(`/playlist/track/all?id=${id}&limit=${limit}&offset=${offset}`);
-    res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
+    if (Array.isArray(res.songs)) {
+      res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
+    }
     return res;
   },
 
@@ -654,7 +658,7 @@ export const neteaseApi = {
     if (res.playlist) {
       res.playlist.coverImgUrl = toHttps(res.playlist.coverImgUrl);
       if (res.playlist.creator) res.playlist.creator.avatarUrl = toHttps(res.playlist.creator.avatarUrl);
-      if (res.playlist.tracks) {
+      if (Array.isArray(res.playlist.tracks)) {
         res.playlist.tracks = mergeSongsWithPrivileges(res.playlist.tracks, res.privileges);
       }
     }
@@ -671,7 +675,7 @@ export const neteaseApi = {
     if (res.album) {
       res.album.picUrl = toHttps(res.album.picUrl);
     }
-    if (res.songs) {
+    if (Array.isArray(res.songs)) {
       res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
     }
     return res;
@@ -737,13 +741,17 @@ export const neteaseApi = {
 
   getArtistTopSongs: async (id: number) => {
     const res = await fetchWithCreds(`/artist/top/song?id=${id}`);
-    res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
+    if (Array.isArray(res.songs)) {
+      res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
+    }
     return res;
   },
 
   getArtistSongs: async (id: number, limit = 50, offset = 0, order = 'hot') => {
     const res = await fetchWithCreds(`/artist/songs?id=${id}&limit=${limit}&offset=${offset}&order=${order}`);
-    res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
+    if (Array.isArray(res.songs)) {
+      res.songs = mergeSongsWithPrivileges(res.songs, res.privileges);
+    }
     return res;
   },
 
@@ -770,31 +778,36 @@ export const neteaseApi = {
 
   getUserCloud: async (limit = 200, offset = 0) => {
     const res = await fetchWithCreds(`/user/cloud?limit=${limit}&offset=${offset}`);
-    const normalizedSongs = (res.data || []).map((item: any) => normalizeSongResult({
-      ...item,
-      t: item?.t ?? 1,
-      simpleSong: item?.simpleSong
-        ? { ...item.simpleSong, t: item.simpleSong.t ?? item?.t ?? 1 }
-        : item.simpleSong,
-    }));
+    const normalizedSongs = Array.isArray(res.data)
+      ? res.data.map((item: any) => normalizeSongResult({
+        ...item,
+        t: item?.t ?? 1,
+        simpleSong: item?.simpleSong
+          ? { ...item.simpleSong, t: item.simpleSong.t ?? item?.t ?? 1 }
+          : item.simpleSong,
+      }))
+      : undefined;
     return {
       ...res,
-      songs: normalizedSongs,
+      ...(normalizedSongs ? { songs: normalizedSongs } : {}),
     };
   },
 
   getUserCloudDetail: async (ids: number[] | number) => {
     const idParam = Array.isArray(ids) ? ids.join(',') : String(ids);
     const res = await fetchWithCreds(`/user/cloud/detail?id=${idParam}`);
-    return {
-      ...res,
-      songs: (res.data || []).map((item: any) => normalizeSongResult({
+    const normalizedSongs = Array.isArray(res.data)
+      ? res.data.map((item: any) => normalizeSongResult({
         ...item,
         t: item?.t ?? 1,
         simpleSong: item?.simpleSong
           ? { ...item.simpleSong, t: item.simpleSong.t ?? item?.t ?? 1 }
           : item.simpleSong,
-      })),
+      }))
+      : undefined;
+    return {
+      ...res,
+      ...(normalizedSongs ? { songs: normalizedSongs } : {}),
     };
   },
 
@@ -804,8 +817,23 @@ export const neteaseApi = {
 
   // --- Search ---
   cloudSearch: async (keywords: string, limit = 30, offset = 0) => {
-    const res = await fetchWithCreds(`/cloudsearch?keywords=${encodeURIComponent(keywords)}&limit=${limit}&offset=${offset}`);
-    if (res.result) {
+    const endpoint = `/cloudsearch?keywords=${encodeURIComponent(keywords)}&limit=${limit}&offset=${offset}`;
+    const hasLoginCookie = Boolean(readProviderSessionValue('netease', 'cookie', ['netease_cookie']));
+    let res = await fetchWithCreds(endpoint);
+    // The anonymous-cookie bootstrap can race the first search on a cold desktop start. Retry one
+    // malformed or empty response while anonymous; authenticated sessions keep the original
+    // response for the adapter to classify.
+    const responseCode = Number(res?.code);
+    const songs = res?.result?.songs;
+    if (!hasLoginCookie && (
+      [301, 401, 403].includes(responseCode)
+      || !res?.result
+      || !Array.isArray(songs)
+      || songs.length === 0
+    )) {
+      res = await fetchWithCreds(endpoint);
+    }
+    if (res?.result && Array.isArray(res.result.songs)) {
       res.result.songs = mergeSongsWithPrivileges(res.result.songs, res.result.privileges ?? res.privileges);
     }
     return res;
@@ -846,10 +874,13 @@ export const neteaseApi = {
 
   getDailyRecommendedSongs: async (afresh = false) => {
     const res = await fetchWithCreds(`/recommend/songs?afresh=${afresh}&timestamp=${Date.now()}`);
-    const rawSongs = res.data?.dailySongs || res.data?.songs || res.recommendData?.dailySongs || res.songs || [];
+    const rawSongs = res.data?.dailySongs ?? res.data?.songs ?? res.recommendData?.dailySongs ?? res.songs;
+    const songs = Array.isArray(rawSongs)
+      ? mergeSongsWithPrivileges(rawSongs, res.data?.privileges || res.privileges)
+      : undefined;
     return {
       ...res,
-      songs: mergeSongsWithPrivileges(rawSongs, res.data?.privileges || res.privileges),
+      ...(songs ? { songs } : {}),
     };
   },
 
@@ -863,23 +894,27 @@ export const neteaseApi = {
 
   getDailyRecommendationHistoryDates: async () => {
     const res = await fetchWithCreds(`/history/recommend/songs?timestamp=${Date.now()}`);
-    const rawDates = res.data?.dates || res.dates || res.data || [];
+    const rawDates = res.data?.dates ?? res.dates ?? (Array.isArray(res.data) ? res.data : undefined);
+    const dates = Array.isArray(rawDates)
+      ? rawDates
+        .map((item: unknown) => typeof item === 'string' ? item : (item as { date?: string })?.date)
+        .filter((date: unknown): date is string => typeof date === 'string' && date.length > 0)
+      : undefined;
     return {
       ...res,
-      dates: Array.isArray(rawDates)
-        ? rawDates
-          .map((item: unknown) => typeof item === 'string' ? item : (item as { date?: string })?.date)
-          .filter((date: unknown): date is string => typeof date === 'string' && date.length > 0)
-        : [],
+      ...(dates ? { dates } : {}),
     };
   },
 
   getDailyRecommendationHistoryDetail: async (date: string) => {
     const res = await fetchWithCreds(`/history/recommend/songs/detail?date=${encodeURIComponent(date)}&timestamp=${Date.now()}`);
-    const rawSongs = res.data?.dailySongs || res.data?.songs || res.recommendData?.dailySongs || res.songs || [];
+    const rawSongs = res.data?.dailySongs ?? res.data?.songs ?? res.recommendData?.dailySongs ?? res.songs;
+    const songs = Array.isArray(rawSongs)
+      ? mergeSongsWithPrivileges(rawSongs, res.data?.privileges || res.privileges)
+      : undefined;
     return {
       ...res,
-      songs: mergeSongsWithPrivileges(rawSongs, res.data?.privileges || res.privileges),
+      ...(songs ? { songs } : {}),
     };
   },
 

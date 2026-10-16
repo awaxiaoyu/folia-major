@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useMotionValue, animate, AnimatePresence, useDragControls, useIsPresent } from 'framer-motion';
 import { ChevronLeft, Disc, ListPlus, Loader2, RefreshCw } from 'lucide-react';
 import GridPanelToggleIndicator from '../shared/GridPanelToggleIndicator';
+import { GridImageWithFallback } from '../shared/GridImageWithFallback';
 import { useTranslation } from 'react-i18next';
 import { SongResult, Theme } from '../../../../types';
 import { getSizedCoverUrl } from '../../../../utils/coverUrl';
@@ -992,7 +993,7 @@ const ArtistGridView: React.FC<ArtistGridViewProps> = ({
                                 }}
                             >
                                 {item.coverUrl ? (
-                                    <img src={getSizedCoverUrl(item.coverUrl, 512)} alt="avatar" draggable={false} loading="lazy" decoding="async" className="w-full h-full object-cover select-none" />
+                                    <GridImageWithFallback src={getSizedCoverUrl(item.coverUrl, 512)} alt="avatar" fallbackSize={48} fallbackClassName="absolute inset-0 flex items-center justify-center bg-white/5" draggable={false} loading="lazy" decoding="async" className="w-full h-full object-cover select-none" />
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center bg-white/5">
                                         <Disc size={48} className="opacity-20 animate-spin" style={{ animationDuration: '4s' }} />

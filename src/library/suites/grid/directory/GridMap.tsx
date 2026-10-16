@@ -110,10 +110,15 @@ const MapCard = React.memo<{
         cardHeight,
     }) => {
         const { t } = useTranslation();
+        const [imageFailed, setImageFailed] = useState(false);
         const isPlaylistSelectionDisabled = isPlaylistEditMode && isHideableDirectoryItem(item);
         // 文件夹卡（含虚拟的「全部歌曲」）的标题、描述行数、「本目录 N 首」都按 folderLabel 判断，见 gridMapCardText。
         const folderLabel = resolveGridMapFolderLabel(item);
         const displayName = resolveGridMapCardTitle(item);
+
+        useEffect(() => {
+            setImageFailed(false);
+        }, [item.coverUrl]);
 
         return (
             <div
@@ -132,7 +137,7 @@ const MapCard = React.memo<{
             >
                 {/* Square Polaroid Photo Area */}
                 <div className="w-full aspect-square rounded-lg overflow-hidden bg-zinc-200/60 dark:bg-zinc-800/60 relative shadow-inner flex items-center justify-center shrink-0">
-                    {item.coverUrl ? (
+                    {item.coverUrl && !imageFailed ? (
                         <>
                             <img
                                 src={getSizedCoverUrl(item.coverUrl, 512)}
@@ -140,7 +145,7 @@ const MapCard = React.memo<{
                                 loading="lazy"
                                 decoding="async"
                                 ref={(el) => {
-                                    if (el && el.complete) {
+                                    if (el && el.complete && el.naturalWidth > 0) {
                                         el.style.opacity = '1';
                                         const placeholder = el.nextElementSibling as HTMLElement;
                                         if (placeholder) {
@@ -160,6 +165,7 @@ const MapCard = React.memo<{
                                         }, 350);
                                     }
                                 }}
+                                onError={() => setImageFailed(true)}
                                 className="w-full h-full object-cover transition-opacity duration-350 pointer-events-none select-none opacity-0"
                             />
                             <div className="absolute inset-0 bg-zinc-300/40 dark:bg-zinc-700/40 transition-opacity duration-350 flex items-center justify-center">

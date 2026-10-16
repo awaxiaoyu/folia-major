@@ -3,6 +3,7 @@ import { Disc, Pencil, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getSizedCoverUrl } from '../../../../utils/coverUrl';
 import { useSidePanelBottomPx } from '../../../../hooks/usePlayerBottomBarBottomPx';
+import { GridImageWithFallback } from '../shared/GridImageWithFallback';
 
 // src/library/suites/grid/artist/ArtistGridInfoCutInPanel.tsx
 // Presents ArtistGrid metadata in the same left-side cut-in pattern used by GridView.
@@ -57,7 +58,7 @@ export const ArtistGridInfoCutInPanel = ({
 
                     <div className="relative mb-4 aspect-square w-full shrink-0 overflow-hidden rounded-2xl bg-zinc-800/20 shadow-lg">
                         {coverUrl ? (
-                            <img src={getSizedCoverUrl(coverUrl, 512)} alt={artistName} decoding="async" className="h-full w-full object-cover select-none pointer-events-none" />
+                            <GridImageWithFallback src={getSizedCoverUrl(coverUrl, 512)} alt={artistName} fallbackSize={64} decoding="async" className="h-full w-full object-cover select-none pointer-events-none" />
                         ) : (
                             <Disc size={64} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20" />
                         )}

@@ -44,7 +44,21 @@ export const PolaroidCardCover: React.FC<{
     isUnavailable: boolean;
     spinnerSize?: number;
 }> = ({ item, isUnavailable, spinnerSize = 48 }) => {
+    const [imageFailed, setImageFailed] = React.useState(false);
+
+    React.useEffect(() => {
+        setImageFailed(false);
+    }, [item.coverUrl]);
+
     if (!item.coverUrl) {
+        return (
+            <div className="absolute inset-0 bg-zinc-300/40 dark:bg-zinc-700/40 flex items-center justify-center">
+                <Disc size={spinnerSize} className="opacity-20" style={{ color: 'var(--text-primary)' }} />
+            </div>
+        );
+    }
+
+    if (imageFailed) {
         return (
             <div className="absolute inset-0 bg-zinc-300/40 dark:bg-zinc-700/40 flex items-center justify-center">
                 <Disc size={spinnerSize} className="opacity-20" style={{ color: 'var(--text-primary)' }} />
@@ -60,7 +74,7 @@ export const PolaroidCardCover: React.FC<{
                 loading="lazy"
                 decoding="async"
                 ref={(el) => {
-                    if (el && el.complete) {
+                    if (el && el.complete && el.naturalWidth > 0) {
                         el.style.opacity = isUnavailable ? '0.3' : '1';
                         const placeholder = el.nextElementSibling as HTMLElement;
                         if (placeholder) {
@@ -80,6 +94,7 @@ export const PolaroidCardCover: React.FC<{
                         }, 350);
                     }
                 }}
+                onError={() => setImageFailed(true)}
                 className="w-full h-full object-cover transition-opacity duration-350 pointer-events-none select-none opacity-0"
             />
             <div className="absolute inset-0 bg-zinc-300/40 dark:bg-zinc-700/40 transition-opacity duration-350 flex items-center justify-center">

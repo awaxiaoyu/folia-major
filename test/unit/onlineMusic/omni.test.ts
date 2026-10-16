@@ -87,6 +87,31 @@ describe('omni routing', () => {
         expect(activeSearch).toHaveBeenCalledWith('query', 10, 0);
     });
 
+    it('keeps successful home feed sections when one recommendation fails', async () => {
+        const collection: ProviderCollection = {
+            providerId,
+            id: 'recommended-playlist',
+            name: 'Recommended playlist',
+            type: 'playlist',
+        };
+        registerOnlineMusicProvider({
+            ...provider(providerId, { searchSongs: async () => ({ items: [], hasMore: false, nextOffset: 0 }) }),
+            capabilities: { ...capabilities, recommendations: true },
+            recommendations: {
+                getPersonalFm: async () => [song(providerId, 'fm')],
+                getDailySongs: async () => { throw new Error('daily unavailable'); },
+                getRecommendedCollections: async () => [collection],
+            },
+        });
+        useOnlineProviderAccountStore.getState().setActiveProviderId(providerId);
+
+        await expect(omni.getHomeFeed(10)).resolves.toEqual({
+            personalFm: [song(providerId, 'fm')],
+            dailySongs: [],
+            recommendedCollections: [collection],
+        });
+    });
+
     it('forwards normalized provider ReplayGain metadata through the audio facade', async () => {
         registerOnlineMusicProvider({
             ...provider(providerId, { searchSongs: async () => ({ items: [], hasMore: false, nextOffset: 0 }) }),

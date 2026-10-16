@@ -911,6 +911,9 @@ export default {
       "glowIntensity": "辉光"
     },
     "backToHome": "返回主页",
+    "appLoadFailed": "应用未能完成加载",
+    "appLoadFailedDetail": "窗口渲染发生异常。重新加载应用后再试。",
+    "reloadApp": "重新加载应用",
     "cancel": "取消",
     "apply": "应用",
     "retry": "重试",
